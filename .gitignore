@@ -1,0 +1,44 @@
+# Rust
+/target
+
+# Cargo lock
+# Keep Cargo.lock for applications
+Cargo.lock
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment
+.env
+
+# Local app data
+data/
+tmp/
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+
+# Keys
+identity.key
+*.pem
+*.key
+
+# Tailscale test configs
+tailscale-state/
+
+# Coverage / profiling
+coverage/
+*.profraw
+
+# docs
+prd.md

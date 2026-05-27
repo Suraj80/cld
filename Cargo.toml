@@ -1,0 +1,50 @@
+[package]
+name = "cld"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Terminal UI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# IDs
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Cryptography
+chacha20poly1305 = "0.10"
+x25519-dalek = "2"
+hkdf = "0.12"
+sha2 = "0.10"
+rand = "0.8"
+
+# Encoding
+base64 = "0.22"
+
+# Memory safety
+zeroize = { version = "1", features = ["derive"] }
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Filesystem paths
+dirs = "5"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
