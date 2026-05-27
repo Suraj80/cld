@@ -1,5 +1,6 @@
 mod net;
 mod protocol;
+mod config;
 
 use anyhow::Result;
 use std::env;
@@ -10,10 +11,13 @@ async fn main() -> Result<()> {
 
     match args.get(1).map(String::as_str) {
         Some("listen") => {
-            net::listener::listen(7799).await?;
+            let config = config::load_or_create_config()?;
+            net::listener::listen(config.listen_port).await?;
         }
 
         Some("send") => {
+            let config = config::load_or_create_config()?;
+
             let address = args
                 .get(2)
                 .map(String::as_str)
@@ -24,7 +28,7 @@ async fn main() -> Result<()> {
                 .map(String::as_str)
                 .unwrap_or("hello from CLD");
 
-            net::sender::send(address, message).await?;
+            net::sender::send(address, &config.username, message).await?;
         }
 
         _ => {

@@ -4,12 +4,12 @@ use chrono::Utc;
 use tokio::net::TcpStream;
 use uuid::Uuid;
 
-pub async fn send(address: &str, message: &str) -> Result<()> {
+pub async fn send(address: &str, username: &str, message: &str) -> Result<()> {
     let mut stream = TcpStream::connect(address).await?;
 
     let wire_message = WireMessage::Text {
         id: Uuid::new_v4(),
-        from: "suraj".to_string(),
+        from: username.to_string(),
         content: message.to_string(),
         timestamp: Utc::now().timestamp(),
     };
