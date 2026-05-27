@@ -8,6 +8,12 @@ const MAX_FRAME_SIZE: usize = 64 * 1024;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WireMessage {
+    Handshake {
+        public_key: String,
+        username: String,
+        version: u8,
+        session_salt: String,
+    },
     Text {
         id: Uuid,
         from: String,
@@ -23,6 +29,7 @@ pub enum WireMessage {
     Ack {
         message_id: Uuid,
     },
+        
 }
 
 pub async fn write_frame<W>(writer: &mut W, payload: &[u8]) -> Result<()>

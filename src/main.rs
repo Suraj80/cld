@@ -1,13 +1,17 @@
 mod net;
 mod protocol;
 mod config;
+mod db;
+mod crypto;
 
 use anyhow::Result;
 use std::env;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let _conn = db::connect()?;
     let args: Vec<String> = env::args().collect();
+    
 
     match args.get(1).map(String::as_str) {
         Some("listen") => {
