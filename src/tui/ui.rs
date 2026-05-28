@@ -67,9 +67,12 @@ async fn run_app(
     let username = config.username.clone();
     let listen_port = config.listen_port;
     let (tx, mut rx) = mpsc::unbounded_channel();
+    let listener_username = username.clone();
+    let listener_tx = tx.clone();
 
     tokio::spawn(async move {
-        if let Err(error) = net::listener::listen(listen_port, tx).await {
+        if let Err(error) = net::listener::listen(listen_port, listener_username, listener_tx).await
+        {
             eprintln!("Listener failed: {error}");
         }
     });
@@ -103,6 +106,22 @@ async fn run_app(
                 }
 
                 ChatEvent::SystemMessage(message) => {
+                    if message == "delivered" {
+                        if let Some(last) = app.messages.iter_mut().rev().find(|message| {
+                            matches!(&message.direction, MessageDirection::Outgoing)
+                                && matches!(&message.status, Some(MessageStatus::Sending))
+                        }) {
+                            last.status = Some(MessageStatus::Delivered);
+                        }
+                    } else if message.starts_with("send failed:") {
+                        if let Some(last) = app.messages.iter_mut().rev().find(|message| {
+                            matches!(&message.direction, MessageDirection::Outgoing)
+                                && matches!(&message.status, Some(MessageStatus::Sending))
+                        }) {
+                            last.status = Some(MessageStatus::Failed);
+                        }
+                    }
+
                     app.messages.push(ChatMessage {
                         from: "system".to_string(),
                         content: message,
@@ -178,7 +197,7 @@ async fn run_app(
             let input_widget = Paragraph::new(app.input.as_str())
                 .block(Block::default().title("Input").borders(Borders::ALL));
 
-            let status_widget = Paragraph::new("q: quit | Enter: clear input");
+            let status_widget = Paragraph::new("q: quit | ↑/↓: contacts | Enter: send");
 
             frame.render_widget(contacts_widget, main[0]);
             frame.render_widget(messages_widget, main[1]);
@@ -195,14 +214,14 @@ async fn run_app(
                 match key.code {
                     KeyCode::Char('q') => break,
 
-                    KeyCode::Down | KeyCode::Char('j') => {
+                    KeyCode::Down => {
                         if !app.contacts.is_empty() {
                             app.selected_contact = (app.selected_contact + 1) % app.contacts.len();
                             load_chat_history(&mut app);
                         }
                     }
 
-                    KeyCode::Up | KeyCode::Char('k') => {
+                    KeyCode::Up => {
                         if !app.contacts.is_empty() {
                             if app.selected_contact == 0 {
                                 app.selected_contact = app.contacts.len() - 1;
@@ -226,8 +245,8 @@ async fn run_app(
                             let address = app
                                 .peer_addresses
                                 .get(app.selected_contact)
-                                .map(String::as_str)
-                                .unwrap_or("127.0.0.1:7799");
+                                .cloned()
+                                .unwrap_or_else(|| "127.0.0.1:7799".to_string());
 
                             let peer_name = app
                                 .contacts
@@ -243,38 +262,42 @@ async fn run_app(
                                 status: Some(MessageStatus::Sending),
                             });
 
-                            match net::sender::send(address, &username, &text).await {
-                                Ok(_) => {
-                                    if let Some(last) = app.messages.last_mut() {
-                                        last.status = Some(MessageStatus::Delivered);
-                                    }
+                            let tx_clone = tx.clone();
+                            let username_clone = username.clone();
+                            let peer_name_clone = peer_name.clone();
+                            let text_clone = text.clone();
 
-                                    if let Ok(conn) = crate::db::connect() {
-                                        let _ = crate::db::insert_message(
-                                            &conn,
-                                            Uuid::new_v4(),
-                                            &peer_name,
-                                            "out",
-                                            &text,
-                                            Utc::now().timestamp(),
-                                        );
-                                    }
-                                    load_chat_history(&mut app);
-                                }
-                                Err(error) => {
-                                    if let Some(last) = app.messages.last_mut() {
-                                        last.status = Some(MessageStatus::Failed);
+                            tokio::spawn(async move {
+                                let result = net::sender::send(
+                                    &address,
+                                    &username_clone,
+                                    &peer_name_clone,
+                                    &text_clone,
+                                )
+                                .await;
 
-                                        app.messages.push(ChatMessage {
-                                            from: "system".to_string(),
-                                            content: format!("error: {error}"),
-                                            timestamp: Utc::now().timestamp(),
-                                            direction: MessageDirection::Incoming,
-                                            status: None,
-                                        });
+                                let message = match result {
+                                    Ok(_) => {
+                                        if let Ok(conn) = crate::db::connect() {
+                                            let _ = crate::db::insert_message(
+                                                &conn,
+                                                Uuid::new_v4(),
+                                                &peer_name_clone,
+                                                "out",
+                                                &text_clone,
+                                                Utc::now().timestamp(),
+                                            );
+                                        }
+
+                                        ChatEvent::SystemMessage("delivered".to_string())
                                     }
-                                }
-                            }
+                                    Err(error) => {
+                                        ChatEvent::SystemMessage(format!("send failed: {error}"))
+                                    }
+                                };
+
+                                let _ = tx_clone.send(message);
+                            });
                         }
                     }
 

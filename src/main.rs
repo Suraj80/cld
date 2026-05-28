@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
                 }
             });
 
-            net::listener::listen(config.listen_port, tx).await?;
+            net::listener::listen(config.listen_port, config.username.clone(), tx).await?;
         }
 
         Some("send") => {
@@ -73,7 +73,7 @@ async fn main() -> Result<()> {
 
             let message = args.get(3).map(String::as_str).unwrap_or("hello from CLD");
 
-            net::sender::send(address, &config.username, message).await?;
+            net::sender::send(address, &config.username, "manual", message).await?;
         }
 
         Some("peers") => {

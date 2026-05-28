@@ -11,7 +11,7 @@ use chrono::Utc;
 use tokio::net::TcpStream;
 use uuid::Uuid;
 
-pub async fn send(address: &str, username: &str, message: &str) -> Result<()> {
+pub async fn send(address: &str, username: &str, peer_name: &str, message: &str) -> Result<()> {
     if message.len() > 4096 {
         anyhow::bail!("Message too large. Max allowed size is 4096 bytes.");
     }
@@ -47,10 +47,10 @@ pub async fn send(address: &str, username: &str, message: &str) -> Result<()> {
     let conn = crate::db::connect()?;
 
     let verified =
-        crate::db::verify_or_store_peer_fingerprint(&conn, "listener", &peer_fingerprint)?;
+        crate::db::verify_or_store_peer_fingerprint(&conn, peer_name, &peer_fingerprint)?;
 
     if !verified {
-        anyhow::bail!("SECURITY WARNING: listener key mismatch. Connection rejected.");
+        anyhow::bail!("SECURITY WARNING: {peer_name} key mismatch. Connection rejected.");
     }
 
     let session_keys =
