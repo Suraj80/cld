@@ -1,4 +1,5 @@
 use crate::tui::events::ChatEvent;
+use crate::tui::message::{ChatMessage, MessageDirection, MessageStatus};
 use crate::tui::state::AppState;
 use crate::{config, net};
 use anyhow::Result;
@@ -43,7 +44,17 @@ fn load_chat_history(app: &mut AppState) {
 
     if let Ok(conn) = crate::db::connect() {
         if let Ok(history) = crate::db::get_messages_for_peer(&conn, peer) {
-            app.messages = history;
+            app.messages = history
+                .into_iter()
+                .map(|content| ChatMessage {
+                    from: "history".to_string(),
+                    content,
+                    timestamp: Utc::now().timestamp(),
+                    direction: MessageDirection::Incoming,
+                    status: None,
+                })
+                .collect();
+
             app.current_peer = Some(peer.clone());
         }
     }
@@ -68,10 +79,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             .iter()
             .map(|peer| peer.address.clone())
             .collect(),
-        messages: vec![
-            "Welcome to CLD".to_string(),
-            "Type a message below".to_string(),
-        ],
+        messages: vec![],
         input: String::new(),
         selected_contact: 0,
         current_peer: None,
@@ -83,11 +91,23 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
         while let Ok(event) = rx.try_recv() {
             match event {
                 ChatEvent::IncomingMessage { from, content } => {
-                    app.messages.push(format!("{from}: {content}"));
+                    app.messages.push(ChatMessage {
+                        from,
+                        content,
+                        timestamp: Utc::now().timestamp(),
+                        direction: MessageDirection::Incoming,
+                        status: None,
+                    });
                 }
 
                 ChatEvent::SystemMessage(message) => {
-                    app.messages.push(format!("[system] {message}"));
+                    app.messages.push(ChatMessage {
+                        from: "system".to_string(),
+                        content: message,
+                        timestamp: Utc::now().timestamp(),
+                        direction: MessageDirection::Incoming,
+                        status: None,
+                    });
                 }
             }
         }
@@ -125,7 +145,26 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
             let contacts_widget = List::new(contact_items)
                 .block(Block::default().title("Contacts").borders(Borders::ALL));
 
-            let message_text = app.messages.join("\n");
+            let message_text = app
+                .messages
+                .iter()
+                .map(|message| {
+                    let prefix = match message.direction {
+                        MessageDirection::Incoming => format!("{}:", message.from),
+                        MessageDirection::Outgoing => "you:".to_string(),
+                    };
+
+                    let status = match &message.status {
+                        Some(MessageStatus::Sending) => " [sending]",
+                        Some(MessageStatus::Delivered) => " [delivered]",
+                        Some(MessageStatus::Failed) => " [failed]",
+                        None => "",
+                    };
+
+                    format!("{prefix} {}{}", message.content, status)
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
 
             let messages_widget = Paragraph::new(message_text)
                 .block(Block::default().title("Messages").borders(Borders::ALL));
@@ -190,11 +229,19 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                                 .cloned()
                                 .unwrap_or_else(|| "unknown".to_string());
 
-                            app.messages.push(format!("you → {peer_name}: {text}"));
+                            app.messages.push(ChatMessage {
+                                from: username.clone(),
+                                content: text.clone(),
+                                timestamp: Utc::now().timestamp(),
+                                direction: MessageDirection::Outgoing,
+                                status: Some(MessageStatus::Sending),
+                            });
 
                             match net::sender::send(address, &username, &text).await {
                                 Ok(_) => {
-                                    app.messages.push("status: delivered".to_string());
+                                    if let Some(last) = app.messages.last_mut() {
+                                        last.status = Some(MessageStatus::Delivered);
+                                    }
 
                                     if let Ok(conn) = crate::db::connect() {
                                         let _ = crate::db::insert_message(
@@ -209,8 +256,17 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                                     load_chat_history(&mut app);
                                 }
                                 Err(error) => {
-                                    app.messages.push(format!("error: {error}"));
-                                    app.messages.push(format!("failed → {peer_name}: {text}"));
+                                    if let Some(last) = app.messages.last_mut() {
+                                        last.status = Some(MessageStatus::Failed);
+
+                                        app.messages.push(ChatMessage {
+                                            from: "system".to_string(),
+                                            content: format!("error: {error}"),
+                                            timestamp: Utc::now().timestamp(),
+                                            direction: MessageDirection::Incoming,
+                                            status: None,
+                                        });
+                                    }
                                 }
                             }
                         }

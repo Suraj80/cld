@@ -124,7 +124,7 @@ pub async fn listen(port: u16, tx: UnboundedSender<ChatEvent>) -> Result<()> {
 
             match read_message(&mut socket).await {
                 Ok(WireMessage::Encrypted {
-                    seq: _,
+                    seq,
                     nonce,
                     ciphertext,
                 }) => {
@@ -201,6 +201,14 @@ pub async fn listen(port: u16, tx: UnboundedSender<ChatEvent>) -> Result<()> {
                                 ) {
                                     eprintln!("Failed to save message: {error}");
                                 }
+                            }
+
+                            let ack = WireMessage::Ack { seq };
+
+                            if let Err(error) = write_message(&mut socket, &ack).await {
+                                let _ = tx.send(ChatEvent::SystemMessage(format!(
+                                    "failed to send ACK: {error}"
+                                )));
                             }
                         }
 
