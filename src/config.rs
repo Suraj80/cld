@@ -65,3 +65,19 @@ pub fn save_config(config: &Config) -> Result<()> {
     fs::write(path, content)?;
     Ok(())
 }
+
+pub fn load_config_from(path: &std::path::Path) -> Result<Config> {
+    if !path.exists() {
+        let default = Config::default();
+
+        let content = toml::to_string_pretty(&default)?;
+        std::fs::write(path, content)?;
+
+        return Ok(default);
+    }
+
+    let content = std::fs::read_to_string(path)?;
+    let config = toml::from_str(&content)?;
+
+    Ok(config)
+}

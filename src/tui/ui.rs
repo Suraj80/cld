@@ -20,7 +20,7 @@ use std::{io, time::Duration};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-pub async fn run_tui() -> Result<()> {
+pub async fn run_tui(config: config::Config) -> Result<()> {
     enable_raw_mode()?;
 
     let mut stdout = io::stdout();
@@ -29,7 +29,7 @@ pub async fn run_tui() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = run_app(&mut terminal).await;
+    let result = run_app(&mut terminal, config).await;
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
@@ -60,8 +60,10 @@ fn load_chat_history(app: &mut AppState) {
     }
 }
 
-async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
-    let config = config::load_or_create_config()?;
+async fn run_app(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    config: config::Config,
+) -> Result<()> {
     let username = config.username.clone();
     let listen_port = config.listen_port;
     let (tx, mut rx) = mpsc::unbounded_channel();

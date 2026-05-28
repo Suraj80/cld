@@ -6,14 +6,31 @@ mod protocol;
 mod tui;
 use anyhow::Result;
 use std::env;
+use std::path::Path;
 use tokio::sync::mpsc;
+
+fn load_app_config(config_override: Option<&String>) -> Result<config::Config> {
+    if let Some(path) = config_override {
+        config::load_config_from(Path::new(path))
+    } else {
+        config::load_or_create_config()
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let _conn = db::connect()?;
     let args: Vec<String> = env::args().collect();
 
-    match args.get(1).map(String::as_str) {
+    let mut config_override = None;
+    let mut command_index = 1;
+
+    if args.len() > 3 && args[1] == "--config" {
+        config_override = Some(args[2].clone());
+        command_index = 3;
+    }
+
+    match args.get(command_index).map(String::as_str) {
         Some("init") => {
             let config_path = config::config_path()?;
             let _config = config::load_or_create_config()?;
@@ -32,11 +49,12 @@ async fn main() -> Result<()> {
             println!("Edit config.toml to update your username and peers.");
         }
         Some("tui") => {
-            tui::ui::run_tui().await?;
+            let config = load_app_config(config_override.as_ref())?;
+            tui::ui::run_tui(config).await?;
         }
 
         Some("listen") => {
-            let config = config::load_or_create_config()?;
+            let config = load_app_config(config_override.as_ref())?;
             let (tx, mut rx) = mpsc::unbounded_channel();
 
             tokio::spawn(async move {
@@ -49,7 +67,7 @@ async fn main() -> Result<()> {
         }
 
         Some("send") => {
-            let config = config::load_or_create_config()?;
+            let config = load_app_config(config_override.as_ref())?;
 
             let address = args.get(2).map(String::as_str).unwrap_or("127.0.0.1:7799");
 
@@ -59,7 +77,7 @@ async fn main() -> Result<()> {
         }
 
         Some("peers") => {
-            let config = config::load_or_create_config()?;
+            let config = load_app_config(config_override.as_ref())?;
 
             if config.peers.is_empty() {
                 println!("No peers configured.");
@@ -81,7 +99,7 @@ async fn main() -> Result<()> {
                 .get(3)
                 .ok_or_else(|| anyhow::anyhow!("Missing peer address"))?;
 
-            let mut config = config::load_or_create_config()?;
+            let mut config = load_app_config(config_override.as_ref())?;
 
             config.peers.push(config::PeerConfig {
                 name: name.to_string(),
@@ -94,6 +112,24 @@ async fn main() -> Result<()> {
             println!("Added peer: {name} ({address})");
         }
 
+        Some("remove-peer") => {
+            let name = args
+                .get(2)
+                .ok_or_else(|| anyhow::anyhow!("Missing peer name"))?;
+
+            let mut config = load_app_config(config_override.as_ref())?;
+
+            let before = config.peers.len();
+
+            config.peers.retain(|peer| peer.name != *name);
+
+            if config.peers.len() == before {
+                println!("Peer not found: {name}");
+            } else {
+                config::save_config(&config)?;
+                println!("Removed peer: {name}");
+            }
+        }
         _ => {
             println!("Usage:");
             println!("  cld init");
@@ -101,6 +137,7 @@ async fn main() -> Result<()> {
             println!("  cld listen");
             println!("  cld peers");
             println!("  cld add-peer <name> <address>");
+            println!("  cld remove-peer <name>");
             println!("  cld send <address> <message>");
         }
     }
