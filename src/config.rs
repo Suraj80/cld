@@ -21,13 +21,11 @@ impl Default for Config {
         Self {
             username: "suraj".to_string(),
             listen_port: 7799,
-            peers: vec![
-                PeerConfig {
-                    name: "friend".to_string(),
-                    address: "127.0.0.1:7799".to_string(),
-                    expected_fingerprint: None,
-                },
-            ],
+            peers: vec![PeerConfig {
+                name: "friend".to_string(),
+                address: "127.0.0.1:7799".to_string(),
+                expected_fingerprint: None,
+            }],
         }
     }
 }

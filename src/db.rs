@@ -1,5 +1,5 @@
 use anyhow::Result;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::{fs, path::PathBuf};
 use uuid::Uuid;
 
@@ -72,4 +72,3 @@ pub fn insert_message(
 
     Ok(())
 }
-

@@ -1,9 +1,12 @@
+use crate::crypto::build_nonce;
+use crate::crypto::encrypt_payload;
 use crate::crypto::{
-    generate_salt, key_debug_fingerprint, load_or_create_identity, parse_salt_base64, salt_base64,
-    Role,
+    Role, generate_salt, key_debug_fingerprint, load_or_create_identity, parse_salt_base64,
+    salt_base64,
 };
-use crate::protocol::{read_message, write_message, WireMessage};
+use crate::protocol::{WireMessage, read_message, write_message};
 use anyhow::Result;
+use base64::{Engine as _, engine::general_purpose};
 use chrono::Utc;
 use tokio::net::TcpStream;
 use uuid::Uuid;
@@ -46,16 +49,29 @@ pub async fn send(address: &str, username: &str, message: &str) -> Result<()> {
         key_debug_fingerprint(&session_keys.send_key)
     );
 
-    let wire_message = WireMessage::Text {
+    let plain_message = WireMessage::Text {
         id: Uuid::new_v4(),
         from: username.to_string(),
         content: message.to_string(),
         timestamp: Utc::now().timestamp(),
     };
 
-    write_message(&mut stream, &wire_message).await?;
+    let plaintext = serde_json::to_vec(&plain_message)?;
 
-    println!("Message sent to {address}");
+    let seq = 0u64;
+    let nonce = build_nonce(&my_salt, seq);
+
+    let ciphertext = encrypt_payload(&session_keys.send_key, &nonce, &plaintext)?;
+
+    let encrypted_message = WireMessage::Encrypted {
+        seq,
+        nonce: general_purpose::STANDARD.encode(nonce),
+        ciphertext: general_purpose::STANDARD.encode(ciphertext),
+    };
+
+    write_message(&mut stream, &encrypted_message).await?;
+
+    println!("Encrypted message sent to {address}");
 
     Ok(())
 }

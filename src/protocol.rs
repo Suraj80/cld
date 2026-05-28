@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use uuid::Uuid;
@@ -13,6 +13,11 @@ pub enum WireMessage {
         username: String,
         version: u8,
         session_salt: String,
+    },
+    Encrypted {
+        seq: u64,
+        nonce: String,
+        ciphertext: String,
     },
     Text {
         id: Uuid,
@@ -29,7 +34,6 @@ pub enum WireMessage {
     Ack {
         message_id: Uuid,
     },
-        
 }
 
 pub async fn write_frame<W>(writer: &mut W, payload: &[u8]) -> Result<()>

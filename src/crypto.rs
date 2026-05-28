@@ -1,5 +1,9 @@
 use anyhow::Result;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
+use chacha20poly1305::{
+    ChaCha20Poly1305, Key, Nonce,
+    aead::{Aead, KeyInit},
+};
 use hkdf::Hkdf;
 use rand_core::{OsRng, RngCore};
 use sha2::{Digest, Sha256};
@@ -146,4 +150,31 @@ pub fn key_debug_fingerprint(key: &[u8; 32]) -> String {
 
 fn bytes_to_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+pub fn build_nonce(salt: &[u8; 32], counter: u64) -> [u8; 12] {
+    let mut nonce = [0u8; 12];
+
+    nonce[0..4].copy_from_slice(&salt[0..4]);
+    nonce[4..12].copy_from_slice(&counter.to_le_bytes());
+
+    nonce
+}
+
+pub fn encrypt_payload(key: &[u8; 32], nonce: &[u8; 12], plaintext: &[u8]) -> Result<Vec<u8>> {
+    let cipher = ChaCha20Poly1305::new(Key::from_slice(key));
+    let nonce = Nonce::from_slice(nonce);
+
+    cipher
+        .encrypt(nonce, plaintext)
+        .map_err(|_| anyhow::anyhow!("Failed to encrypt payload"))
+}
+
+pub fn decrypt_payload(key: &[u8; 32], nonce: &[u8; 12], ciphertext: &[u8]) -> Result<Vec<u8>> {
+    let cipher = ChaCha20Poly1305::new(Key::from_slice(key));
+    let nonce = Nonce::from_slice(nonce);
+
+    cipher
+        .decrypt(nonce, ciphertext)
+        .map_err(|_| anyhow::anyhow!("Failed to decrypt payload"))
 }
