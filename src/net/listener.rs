@@ -2,9 +2,11 @@ use crate::crypto::{
     Role, decrypt_payload, generate_salt, key_debug_fingerprint, load_or_create_identity,
     parse_salt_base64, public_key_fingerprint_base64, salt_base64,
 };
+use crate::net::ratelimit::RateLimiter;
 use crate::protocol::{WireMessage, read_message, write_message};
 use anyhow::Result;
 use base64::{Engine as _, engine::general_purpose};
+use std::time::Duration;
 use tokio::net::TcpListener;
 
 pub async fn listen(port: u16) -> Result<()> {
@@ -177,6 +179,12 @@ pub async fn listen(port: u16) -> Result<()> {
                         }
                     };
 
+                    let mut rate_limiter = RateLimiter::new(60, Duration::from_secs(1));
+                    if !rate_limiter.allow() {
+                        eprintln!("Rate limit exceeded. Connection rejected.");
+                        return;
+                    }
+
                     match inner_message {
                         WireMessage::Text {
                             id,
@@ -184,6 +192,11 @@ pub async fn listen(port: u16) -> Result<()> {
                             content,
                             timestamp,
                         } => {
+                            if content.len() > 4096 {
+                                eprintln!("Message rejected: content too large");
+                                return;
+                            }
+
                             println!("Decrypted message:");
                             println!("Message ID: {id}");
                             println!("From: {from}");

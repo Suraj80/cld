@@ -12,6 +12,10 @@ use tokio::net::TcpStream;
 use uuid::Uuid;
 
 pub async fn send(address: &str, username: &str, message: &str) -> Result<()> {
+    if message.len() > 4096 {
+        anyhow::bail!("Message too large. Max allowed size is 4096 bytes.");
+    }
+
     let mut stream = TcpStream::connect(address).await?;
 
     let identity = load_or_create_identity()?;
