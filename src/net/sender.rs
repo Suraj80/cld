@@ -78,5 +78,14 @@ pub async fn send(address: &str, username: &str, message: &str) -> Result<()> {
 
     write_message(&mut stream, &encrypted_message).await?;
 
+    match read_message(&mut stream).await? {
+        WireMessage::Ack { seq: ack_seq } if ack_seq == seq => {
+            // delivered
+        }
+        other => {
+            anyhow::bail!("Expected ACK, got: {other:?}");
+        }
+    }
+
     Ok(())
 }

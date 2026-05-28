@@ -5,4 +5,5 @@ pub struct AppState {
     pub messages: Vec<String>,
     pub input: String,
     pub selected_contact: usize,
+    pub current_peer: Option<String>,
 }

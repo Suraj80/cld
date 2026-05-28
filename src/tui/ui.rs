@@ -36,6 +36,19 @@ pub async fn run_tui() -> Result<()> {
     result
 }
 
+fn load_chat_history(app: &mut AppState) {
+    let Some(peer) = app.contacts.get(app.selected_contact) else {
+        return;
+    };
+
+    if let Ok(conn) = crate::db::connect() {
+        if let Ok(history) = crate::db::get_messages_for_peer(&conn, peer) {
+            app.messages = history;
+            app.current_peer = Some(peer.clone());
+        }
+    }
+}
+
 async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
     let config = config::load_or_create_config()?;
     let username = config.username.clone();
@@ -61,7 +74,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
         ],
         input: String::new(),
         selected_contact: 0,
+        current_peer: None,
     };
+
+    load_chat_history(&mut app);
 
     loop {
         while let Ok(event) = rx.try_recv() {
@@ -137,6 +153,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                     KeyCode::Down | KeyCode::Char('j') => {
                         if !app.contacts.is_empty() {
                             app.selected_contact = (app.selected_contact + 1) % app.contacts.len();
+                            load_chat_history(&mut app);
                         }
                     }
 
@@ -144,6 +161,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                         if !app.contacts.is_empty() {
                             if app.selected_contact == 0 {
                                 app.selected_contact = app.contacts.len() - 1;
+                                load_chat_history(&mut app);
                             } else {
                                 app.selected_contact -= 1;
                             }
@@ -176,7 +194,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
 
                             match net::sender::send(address, &username, &text).await {
                                 Ok(_) => {
-                                    app.messages.push("status: sent".to_string());
+                                    app.messages.push("status: delivered".to_string());
 
                                     if let Ok(conn) = crate::db::connect() {
                                         let _ = crate::db::insert_message(
@@ -188,6 +206,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                                             Utc::now().timestamp(),
                                         );
                                     }
+                                    load_chat_history(&mut app);
                                 }
                                 Err(error) => {
                                     app.messages.push(format!("error: {error}"));

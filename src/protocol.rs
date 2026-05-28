@@ -32,7 +32,7 @@ pub enum WireMessage {
         timestamp: i64,
     },
     Ack {
-        message_id: Uuid,
+        seq: u64,
     },
 }
 
