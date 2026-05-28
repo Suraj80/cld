@@ -1,6 +1,8 @@
+use crate::tui::events::ChatEvent;
 use crate::tui::state::AppState;
 use crate::{config, net};
 use anyhow::Result;
+use chrono::Utc;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
     execute,
@@ -14,6 +16,8 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
 use std::{io, time::Duration};
+use tokio::sync::mpsc;
+use uuid::Uuid;
 
 pub async fn run_tui() -> Result<()> {
     enable_raw_mode()?;
@@ -36,9 +40,10 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
     let config = config::load_or_create_config()?;
     let username = config.username.clone();
     let listen_port = config.listen_port;
+    let (tx, mut rx) = mpsc::unbounded_channel();
 
     tokio::spawn(async move {
-        if let Err(error) = net::listener::listen(listen_port).await {
+        if let Err(error) = net::listener::listen(listen_port, tx).await {
             eprintln!("Listener failed: {error}");
         }
     });
@@ -59,6 +64,17 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
     };
 
     loop {
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                ChatEvent::IncomingMessage { from, content } => {
+                    app.messages.push(format!("{from}: {content}"));
+                }
+
+                ChatEvent::SystemMessage(message) => {
+                    app.messages.push(format!("[system] {message}"));
+                }
+            }
+        }
         terminal.draw(|frame| {
             let area = frame.area();
 
@@ -100,16 +116,6 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
 
             let input_widget = Paragraph::new(app.input.as_str())
                 .block(Block::default().title("Input").borders(Borders::ALL));
-
-            if let Some(peer) = app.contacts.get(app.selected_contact) {
-                if let Ok(conn) = crate::db::connect() {
-                    if let Ok(history) = crate::db::get_messages_for_peer(&conn, peer) {
-                        if !history.is_empty() {
-                            app.messages = history;
-                        }
-                    }
-                }
-            }
 
             let status_widget = Paragraph::new("q: quit | Enter: clear input");
 
@@ -169,8 +175,24 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                             app.messages.push(format!("you → {peer_name}: {text}"));
 
                             match net::sender::send(address, &username, &text).await {
-                                Ok(_) => app.messages.push("status: sent".to_string()),
-                                Err(error) => app.messages.push(format!("error: {error}")),
+                                Ok(_) => {
+                                    app.messages.push("status: sent".to_string());
+
+                                    if let Ok(conn) = crate::db::connect() {
+                                        let _ = crate::db::insert_message(
+                                            &conn,
+                                            Uuid::new_v4(),
+                                            &peer_name,
+                                            "out",
+                                            &text,
+                                            Utc::now().timestamp(),
+                                        );
+                                    }
+                                }
+                                Err(error) => {
+                                    app.messages.push(format!("error: {error}"));
+                                    app.messages.push(format!("failed → {peer_name}: {text}"));
+                                }
                             }
                         }
                     }

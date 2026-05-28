@@ -143,11 +143,6 @@ fn xor_salts(a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
     out
 }
 
-pub fn key_debug_fingerprint(key: &[u8; 32]) -> String {
-    let hash = Sha256::digest(key);
-    bytes_to_hex(&hash[..8])
-}
-
 fn bytes_to_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }

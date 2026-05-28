@@ -4,9 +4,9 @@ mod db;
 mod net;
 mod protocol;
 mod tui;
-
 use anyhow::Result;
 use std::env;
+use tokio::sync::mpsc;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -20,7 +20,15 @@ async fn main() -> Result<()> {
 
         Some("listen") => {
             let config = config::load_or_create_config()?;
-            net::listener::listen(config.listen_port).await?;
+            let (tx, mut rx) = mpsc::unbounded_channel();
+
+            tokio::spawn(async move {
+                while let Some(event) = rx.recv().await {
+                    println!("event: {event:?}");
+                }
+            });
+
+            net::listener::listen(config.listen_port, tx).await?;
         }
 
         Some("send") => {

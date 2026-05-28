@@ -1,25 +1,28 @@
 use crate::crypto::{
-    Role, decrypt_payload, generate_salt, key_debug_fingerprint, load_or_create_identity,
-    parse_salt_base64, public_key_fingerprint_base64, salt_base64,
+    Role, decrypt_payload, generate_salt, load_or_create_identity, parse_salt_base64,
+    public_key_fingerprint_base64, salt_base64,
 };
 use crate::net::ratelimit::RateLimiter;
 use crate::protocol::{WireMessage, read_message, write_message};
+use crate::tui::events::ChatEvent;
 use anyhow::Result;
 use base64::{Engine as _, engine::general_purpose};
 use std::time::Duration;
 use tokio::net::TcpListener;
+use tokio::sync::mpsc::UnboundedSender;
 
-pub async fn listen(port: u16) -> Result<()> {
+pub async fn listen(port: u16, tx: UnboundedSender<ChatEvent>) -> Result<()> {
     let address = format!("127.0.0.1:{port}");
     let listener = TcpListener::bind(&address).await?;
 
-    println!("CLD listening on {address}");
-
     loop {
-        let (mut socket, peer_addr) = listener.accept().await?;
-        println!("Connection from {peer_addr}");
+        let (mut socket, _peer_addr) = listener.accept().await?;
+
+        let tx_for_connection = tx.clone();
 
         tokio::spawn(async move {
+            let tx = tx_for_connection;
+
             let identity = match load_or_create_identity() {
                 Ok(identity) => identity,
                 Err(error) => {
@@ -82,9 +85,7 @@ pub async fn listen(port: u16) -> Result<()> {
                 &peer_username,
                 &peer_fingerprint,
             ) {
-                Ok(true) => {
-                    println!("Peer verified: {peer_username}");
-                }
+                Ok(true) => {}
                 Ok(false) => {
                     eprintln!("SECURITY WARNING: peer key mismatch for {peer_username}");
                     eprintln!("Connection rejected.");
@@ -121,20 +122,12 @@ pub async fn listen(port: u16) -> Result<()> {
                 }
             };
 
-            println!("Handshake completed with {peer_username}");
-            println!(
-                "Derived recv key fingerprint: {}",
-                key_debug_fingerprint(&session_keys.recv_key)
-            );
-
             match read_message(&mut socket).await {
                 Ok(WireMessage::Encrypted {
-                    seq,
+                    seq: _,
                     nonce,
                     ciphertext,
                 }) => {
-                    println!("Received encrypted message with seq: {seq}");
-
                     let nonce_bytes = match general_purpose::STANDARD.decode(nonce) {
                         Ok(bytes) => bytes,
                         Err(error) => {
@@ -197,11 +190,10 @@ pub async fn listen(port: u16) -> Result<()> {
                                 return;
                             }
 
-                            println!("Decrypted message:");
-                            println!("Message ID: {id}");
-                            println!("From: {from}");
-                            println!("Content: {content}");
-                            println!("Timestamp: {timestamp}");
+                            let _ = tx.send(ChatEvent::IncomingMessage {
+                                from: from.clone(),
+                                content: content.clone(),
+                            });
 
                             if let Ok(conn) = crate::db::connect() {
                                 if let Err(error) = crate::db::insert_message(
@@ -212,9 +204,7 @@ pub async fn listen(port: u16) -> Result<()> {
                             }
                         }
 
-                        other => {
-                            println!("Decrypted non-text message: {other:?}");
-                        }
+                        _other => {}
                     }
                 }
 
