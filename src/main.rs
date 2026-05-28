@@ -3,6 +3,7 @@ mod crypto;
 mod db;
 mod net;
 mod protocol;
+mod tui;
 
 use anyhow::Result;
 use std::env;
@@ -13,6 +14,10 @@ async fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
 
     match args.get(1).map(String::as_str) {
+        Some("tui") => {
+            tui::ui::run_tui().await?;
+        }
+
         Some("listen") => {
             let config = config::load_or_create_config()?;
             net::listener::listen(config.listen_port).await?;
@@ -30,6 +35,7 @@ async fn main() -> Result<()> {
 
         _ => {
             println!("Usage:");
+            println!("  cld tui");
             println!("  cld listen");
             println!("  cld send <address> <message>");
         }

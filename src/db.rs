@@ -17,8 +17,6 @@ pub fn db_path() -> Result<PathBuf> {
 pub fn connect() -> Result<Connection> {
     let path = db_path()?;
 
-    println!("Database path: {}", path.display());
-
     let conn = Connection::open(path)?;
     init(&conn)?;
     Ok(conn)

@@ -39,7 +39,7 @@ pub async fn send(address: &str, username: &str, message: &str) -> Result<()> {
             username,
             ..
         } => {
-            println!("Handshake completed with {username}");
+            
             (public_key, parse_salt_base64(&session_salt)?)
         }
         _ => anyhow::bail!("Expected handshake response"),
@@ -56,15 +56,10 @@ pub async fn send(address: &str, username: &str, message: &str) -> Result<()> {
         anyhow::bail!("SECURITY WARNING: listener key mismatch. Connection rejected.");
     }
 
-    println!("Peer verified: listener");
 
     let session_keys =
         identity.derive_session_keys(&peer_public_key, &my_salt, &peer_salt, Role::Initiator)?;
 
-    println!(
-        "Derived send key fingerprint: {}",
-        key_debug_fingerprint(&session_keys.send_key)
-    );
 
     let plain_message = WireMessage::Text {
         id: Uuid::new_v4(),
@@ -88,7 +83,6 @@ pub async fn send(address: &str, username: &str, message: &str) -> Result<()> {
 
     write_message(&mut stream, &encrypted_message).await?;
 
-    println!("Encrypted message sent to {address}");
 
     Ok(())
 }
