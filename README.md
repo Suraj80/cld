@@ -265,25 +265,6 @@ address = "127.0.0.1:7800"
 expected_fingerprint = ""
 ```
 
-## Screenshots
-
-TUI screenshot:
-
-```text
-TODO: Add screenshot of the Ratatui chat interface.
-```
-
-Encrypted message flow:
-
-```text
-TODO: Add diagram or capture showing plaintext handshake followed by encrypted frames.
-```
-
-Multi-peer testing:
-
-```text
-TODO: Add screenshot showing multiple local profiles communicating.
-```
 
 ## Testing
 
