@@ -119,3 +119,30 @@ pub fn verify_or_store_peer_fingerprint(
         }
     }
 }
+
+pub fn get_messages_for_peer(conn: &Connection, peer: &str) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "
+        SELECT direction, content, timestamp
+        FROM messages
+        WHERE peer = ?1
+        ORDER BY timestamp ASC
+        ",
+    )?;
+
+    let rows = stmt.query_map(params![peer], |row| {
+        let direction: String = row.get(0)?;
+        let content: String = row.get(1)?;
+        let timestamp: i64 = row.get(2)?;
+
+        Ok(format!("[{timestamp}] {direction}: {content}"))
+    })?;
+
+    let mut messages = Vec::new();
+
+    for row in rows {
+        messages.push(row?);
+    }
+
+    Ok(messages)
+}

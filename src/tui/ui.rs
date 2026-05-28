@@ -6,6 +6,7 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
+use ratatui::style::{Modifier, Style};
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
@@ -32,8 +33,23 @@ pub async fn run_tui() -> Result<()> {
 }
 
 async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
+    let config = config::load_or_create_config()?;
+    let username = config.username.clone();
+    let listen_port = config.listen_port;
+
+    tokio::spawn(async move {
+        if let Err(error) = net::listener::listen(listen_port).await {
+            eprintln!("Listener failed: {error}");
+        }
+    });
+
     let mut app = AppState {
-        contacts: vec!["suraj".to_string(), "friend".to_string()],
+        contacts: config.peers.iter().map(|peer| peer.name.clone()).collect(),
+        peer_addresses: config
+            .peers
+            .iter()
+            .map(|peer| peer.address.clone())
+            .collect(),
         messages: vec![
             "Welcome to CLD".to_string(),
             "Type a message below".to_string(),
@@ -55,16 +71,24 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                 ])
                 .split(area);
 
+            let contact_items: Vec<ListItem> = app
+                .contacts
+                .iter()
+                .enumerate()
+                .map(|(index, contact)| {
+                    if index == app.selected_contact {
+                        ListItem::new(format!("> {contact}"))
+                            .style(Style::default().add_modifier(Modifier::BOLD))
+                    } else {
+                        ListItem::new(format!("  {contact}"))
+                    }
+                })
+                .collect();
+
             let main = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Length(24), Constraint::Min(1)])
                 .split(vertical[0]);
-
-            let contact_items: Vec<ListItem> = app
-                .contacts
-                .iter()
-                .map(|c| ListItem::new(c.as_str()))
-                .collect();
 
             let contacts_widget = List::new(contact_items)
                 .block(Block::default().title("Contacts").borders(Borders::ALL));
@@ -76,6 +100,16 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
 
             let input_widget = Paragraph::new(app.input.as_str())
                 .block(Block::default().title("Input").borders(Borders::ALL));
+
+            if let Some(peer) = app.contacts.get(app.selected_contact) {
+                if let Ok(conn) = crate::db::connect() {
+                    if let Ok(history) = crate::db::get_messages_for_peer(&conn, peer) {
+                        if !history.is_empty() {
+                            app.messages = history;
+                        }
+                    }
+                }
+            }
 
             let status_widget = Paragraph::new("q: quit | Enter: clear input");
 
@@ -93,26 +127,56 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
 
                 match key.code {
                     KeyCode::Char('q') => break,
-                    KeyCode::Char(c) => app.input.push(c),
+
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        if !app.contacts.is_empty() {
+                            app.selected_contact = (app.selected_contact + 1) % app.contacts.len();
+                        }
+                    }
+
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        if !app.contacts.is_empty() {
+                            if app.selected_contact == 0 {
+                                app.selected_contact = app.contacts.len() - 1;
+                            } else {
+                                app.selected_contact -= 1;
+                            }
+                        }
+                    }
+
                     KeyCode::Backspace => {
                         app.input.pop();
                     }
+
                     KeyCode::Enter => {
                         let text = app.input.trim().to_string();
 
                         if !text.is_empty() {
-                            app.messages.push(format!("you: {text}"));
                             app.input.clear();
 
-                            let config = config::load_or_create_config()?;
-                            let address = "127.0.0.1:7799";
+                            let address = app
+                                .peer_addresses
+                                .get(app.selected_contact)
+                                .map(String::as_str)
+                                .unwrap_or("127.0.0.1:7799");
 
-                            match net::sender::send(address, &config.username, &text).await {
+                            let peer_name = app
+                                .contacts
+                                .get(app.selected_contact)
+                                .cloned()
+                                .unwrap_or_else(|| "unknown".to_string());
+
+                            app.messages.push(format!("you → {peer_name}: {text}"));
+
+                            match net::sender::send(address, &username, &text).await {
                                 Ok(_) => app.messages.push("status: sent".to_string()),
                                 Err(error) => app.messages.push(format!("error: {error}")),
                             }
                         }
                     }
+
+                    KeyCode::Char(c) => app.input.push(c),
+
                     _ => {}
                 }
             }

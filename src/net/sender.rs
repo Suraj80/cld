@@ -1,8 +1,8 @@
 use crate::crypto::build_nonce;
 use crate::crypto::encrypt_payload;
 use crate::crypto::{
-    Role, generate_salt, key_debug_fingerprint, load_or_create_identity, parse_salt_base64,
-    public_key_fingerprint_base64, salt_base64,
+    Role, generate_salt, load_or_create_identity, parse_salt_base64, public_key_fingerprint_base64,
+    salt_base64,
 };
 use crate::protocol::{WireMessage, read_message, write_message};
 use anyhow::Result;
@@ -36,12 +36,9 @@ pub async fn send(address: &str, username: &str, message: &str) -> Result<()> {
         WireMessage::Handshake {
             public_key,
             session_salt,
-            username,
+            username: _,
             ..
-        } => {
-            
-            (public_key, parse_salt_base64(&session_salt)?)
-        }
+        } => (public_key, parse_salt_base64(&session_salt)?),
         _ => anyhow::bail!("Expected handshake response"),
     };
 
@@ -56,10 +53,8 @@ pub async fn send(address: &str, username: &str, message: &str) -> Result<()> {
         anyhow::bail!("SECURITY WARNING: listener key mismatch. Connection rejected.");
     }
 
-
     let session_keys =
         identity.derive_session_keys(&peer_public_key, &my_salt, &peer_salt, Role::Initiator)?;
-
 
     let plain_message = WireMessage::Text {
         id: Uuid::new_v4(),
@@ -82,7 +77,6 @@ pub async fn send(address: &str, username: &str, message: &str) -> Result<()> {
     };
 
     write_message(&mut stream, &encrypted_message).await?;
-
 
     Ok(())
 }
