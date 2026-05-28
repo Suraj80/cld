@@ -178,3 +178,9 @@ pub fn decrypt_payload(key: &[u8; 32], nonce: &[u8; 12], ciphertext: &[u8]) -> R
         .decrypt(nonce, ciphertext)
         .map_err(|_| anyhow::anyhow!("Failed to decrypt payload"))
 }
+
+pub fn public_key_fingerprint_base64(public_key_base64: &str) -> Result<String> {
+    let bytes = general_purpose::STANDARD.decode(public_key_base64)?;
+    let hash = Sha256::digest(&bytes);
+    Ok(bytes_to_hex(&hash))
+}

@@ -1,4 +1,5 @@
 use anyhow::Result;
+use chrono::Utc;
 use rusqlite::{Connection, params};
 use std::{fs, path::PathBuf};
 use uuid::Uuid;
@@ -71,4 +72,52 @@ pub fn insert_message(
     )?;
 
     Ok(())
+}
+
+pub fn get_peer_fingerprint(conn: &Connection, peer_name: &str) -> Result<Option<String>> {
+    let mut stmt = conn.prepare(
+        "
+        SELECT fingerprint
+        FROM peer_keys
+        WHERE peer_name = ?1
+        ",
+    )?;
+
+    let result = stmt.query_row(params![peer_name], |row| row.get::<_, String>(0));
+
+    match result {
+        Ok(fingerprint) => Ok(Some(fingerprint)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+pub fn store_peer_fingerprint(conn: &Connection, peer_name: &str, fingerprint: &str) -> Result<()> {
+    let now = Utc::now().timestamp();
+
+    conn.execute(
+        "
+        INSERT INTO peer_keys (peer_name, fingerprint, first_seen, last_seen)
+        VALUES (?1, ?2, ?3, ?4)
+        ON CONFLICT(peer_name)
+        DO UPDATE SET last_seen = excluded.last_seen
+        ",
+        params![peer_name, fingerprint, now, now],
+    )?;
+
+    Ok(())
+}
+
+pub fn verify_or_store_peer_fingerprint(
+    conn: &Connection,
+    peer_name: &str,
+    fingerprint: &str,
+) -> Result<bool> {
+    match get_peer_fingerprint(conn, peer_name)? {
+        Some(stored) => Ok(stored == fingerprint),
+        None => {
+            store_peer_fingerprint(conn, peer_name, fingerprint)?;
+            Ok(true)
+        }
+    }
 }

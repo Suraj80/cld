@@ -2,7 +2,7 @@ use crate::crypto::build_nonce;
 use crate::crypto::encrypt_payload;
 use crate::crypto::{
     Role, generate_salt, key_debug_fingerprint, load_or_create_identity, parse_salt_base64,
-    salt_base64,
+    public_key_fingerprint_base64, salt_base64,
 };
 use crate::protocol::{WireMessage, read_message, write_message};
 use anyhow::Result;
@@ -40,6 +40,19 @@ pub async fn send(address: &str, username: &str, message: &str) -> Result<()> {
         }
         _ => anyhow::bail!("Expected handshake response"),
     };
+
+    let peer_fingerprint = public_key_fingerprint_base64(&peer_public_key)?;
+
+    let conn = crate::db::connect()?;
+
+    let verified =
+        crate::db::verify_or_store_peer_fingerprint(&conn, "listener", &peer_fingerprint)?;
+
+    if !verified {
+        anyhow::bail!("SECURITY WARNING: listener key mismatch. Connection rejected.");
+    }
+
+    println!("Peer verified: listener");
 
     let session_keys =
         identity.derive_session_keys(&peer_public_key, &my_salt, &peer_salt, Role::Initiator)?;

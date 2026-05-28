@@ -1,6 +1,6 @@
 use crate::crypto::{
     Role, decrypt_payload, generate_salt, key_debug_fingerprint, load_or_create_identity,
-    parse_salt_base64, salt_base64,
+    parse_salt_base64, public_key_fingerprint_base64, salt_base64,
 };
 use crate::protocol::{WireMessage, read_message, write_message};
 use anyhow::Result;
@@ -58,6 +58,41 @@ pub async fn listen(port: u16) -> Result<()> {
                     return;
                 }
             };
+
+            let peer_fingerprint = match public_key_fingerprint_base64(&peer_public_key) {
+                Ok(value) => value,
+                Err(error) => {
+                    eprintln!("Failed to compute peer fingerprint: {error}");
+                    return;
+                }
+            };
+
+            let conn = match crate::db::connect() {
+                Ok(conn) => conn,
+                Err(error) => {
+                    eprintln!("Failed to open database: {error}");
+                    return;
+                }
+            };
+
+            match crate::db::verify_or_store_peer_fingerprint(
+                &conn,
+                &peer_username,
+                &peer_fingerprint,
+            ) {
+                Ok(true) => {
+                    println!("Peer verified: {peer_username}");
+                }
+                Ok(false) => {
+                    eprintln!("SECURITY WARNING: peer key mismatch for {peer_username}");
+                    eprintln!("Connection rejected.");
+                    return;
+                }
+                Err(error) => {
+                    eprintln!("Failed to verify peer fingerprint: {error}");
+                    return;
+                }
+            }
 
             let response = WireMessage::Handshake {
                 public_key: identity.public_key_base64(),
