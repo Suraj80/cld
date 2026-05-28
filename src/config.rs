@@ -58,3 +58,10 @@ pub fn load_or_create_config() -> Result<Config> {
 
     Ok(config)
 }
+
+pub fn save_config(config: &Config) -> Result<()> {
+    let path = config_path()?;
+    let content = toml::to_string_pretty(config)?;
+    fs::write(path, content)?;
+    Ok(())
+}

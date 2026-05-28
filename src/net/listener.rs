@@ -32,6 +32,7 @@ pub async fn listen(port: u16, tx: UnboundedSender<ChatEvent>) -> Result<()> {
             };
 
             let my_salt = generate_salt();
+            let mut last_seq: Option<u64> = None;
 
             let incoming = match read_message(&mut socket).await {
                 Ok(message) => message,
@@ -128,6 +129,20 @@ pub async fn listen(port: u16, tx: UnboundedSender<ChatEvent>) -> Result<()> {
                     nonce,
                     ciphertext,
                 }) => {
+                    if let Some(last) = last_seq {
+                        if seq <= last {
+                            eprintln!("Replay detected. Dropping message.");
+                            return;
+                        }
+
+                        if seq > last + 100 {
+                            eprintln!("Sequence gap too large. Dropping connection.");
+                            return;
+                        }
+                    }
+
+                    last_seq = Some(seq);
+
                     let nonce_bytes = match general_purpose::STANDARD.decode(nonce) {
                         Ok(bytes) => bytes,
                         Err(error) => {

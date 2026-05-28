@@ -161,7 +161,11 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
                         None => "",
                     };
 
-                    format!("{prefix} {}{}", message.content, status)
+                    let time = chrono::DateTime::from_timestamp(message.timestamp, 0)
+                        .map(|dt| dt.format("%H:%M").to_string())
+                        .unwrap_or_else(|| "--:--".to_string());
+
+                    format!("[{time}] {prefix} {}{}", message.content, status)
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
