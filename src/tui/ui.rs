@@ -48,14 +48,23 @@ fn load_chat_history(app: &mut AppState) {
     let Some(peer) = app.contacts.get(app.selected_contact) else {
         return;
     };
+    let peer = peer.clone();
+
+    if app.messages.contains_key(&peer) {
+        app.select_peer(peer);
+        return;
+    }
 
     let conn = match crate::db::connect() {
         Ok(conn) => conn,
-        Err(_) => return,
+        Err(_) => {
+            app.select_peer(peer);
+            return;
+        }
     };
 
-    if let Ok(history) = crate::db::get_messages_for_peer(&conn, peer) {
-        app.messages = history
+    if let Ok(history) = crate::db::get_messages_for_peer(&conn, &peer) {
+        let messages = history
             .into_iter()
             .map(|message| {
                 let direction = if message.direction == "out" {
@@ -79,8 +88,9 @@ fn load_chat_history(app: &mut AppState) {
                 }
             })
             .collect();
-
-        app.current_peer = Some(peer.clone());
+        app.replace_messages_for_peer(peer, messages);
+    } else {
+        app.select_peer(peer);
     }
 }
 
@@ -109,7 +119,7 @@ async fn run_app(
             .iter()
             .map(|peer| peer.address.clone())
             .collect(),
-        messages: vec![],
+        messages: Default::default(),
         input: String::new(),
         selected_contact: 0,
         current_peer: None,
@@ -121,28 +131,35 @@ async fn run_app(
         while let Ok(event) = rx.try_recv() {
             match event {
                 ChatEvent::IncomingMessage { from, content } => {
-                    if app.current_peer.as_deref() == Some(from.as_str()) {
-                        app.messages.push(ChatMessage {
+                    app.push_message_for_peer(
+                        from.clone(),
+                        ChatMessage {
                             from,
                             content,
                             timestamp: Utc::now().timestamp(),
                             direction: MessageDirection::Incoming,
                             status: None,
-                        });
-                    }
+                        },
+                    );
                 }
 
                 ChatEvent::SystemMessage(message) => {
                     if message == "delivered" {
-                        if let Some(last) = app.messages.last_mut() {
+                        if let Some(last) = app
+                            .visible_messages_mut()
+                            .and_then(|messages| messages.last_mut())
+                        {
                             last.status = Some(MessageStatus::Delivered);
                         }
                     } else if message.starts_with("send failed:") {
-                        if let Some(last) = app.messages.last_mut() {
+                        if let Some(last) = app
+                            .visible_messages_mut()
+                            .and_then(|messages| messages.last_mut())
+                        {
                             last.status = Some(MessageStatus::Failed);
                         }
                     } else {
-                        app.messages.push(ChatMessage {
+                        app.push_message_for_current_peer(ChatMessage {
                             from: "system".to_string(),
                             content: message,
                             timestamp: Utc::now().timestamp(),
@@ -188,7 +205,7 @@ async fn run_app(
                 .block(Block::default().title("Contacts").borders(Borders::ALL));
 
             let message_text = app
-                .messages
+                .visible_messages()
                 .iter()
                 .map(|message| {
                     let prefix = match message.direction {
@@ -280,7 +297,7 @@ async fn run_app(
                                 .and_then(|peer| peer.expected_fingerprint.as_deref())
                                 .map(str::to_owned);
 
-                            app.messages.push(ChatMessage {
+                            app.push_message_for_current_peer(ChatMessage {
                                 from: username.clone(),
                                 content: text.clone(),
                                 timestamp: Utc::now().timestamp(),
