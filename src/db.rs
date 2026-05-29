@@ -1,3 +1,10 @@
+#[derive(Debug, Clone)]
+pub struct StoredMessage {
+    pub direction: String,
+    pub content: String,
+    pub timestamp: i64,
+}
+
 use anyhow::Result;
 use chrono::Utc;
 use rusqlite::{Connection, params};
@@ -120,7 +127,7 @@ pub fn verify_or_store_peer_fingerprint(
     }
 }
 
-pub fn get_messages_for_peer(conn: &Connection, peer: &str) -> Result<Vec<String>> {
+pub fn get_messages_for_peer(conn: &Connection, peer: &str) -> Result<Vec<StoredMessage>> {
     let mut stmt = conn.prepare(
         "
         SELECT direction, content, timestamp
@@ -131,11 +138,11 @@ pub fn get_messages_for_peer(conn: &Connection, peer: &str) -> Result<Vec<String
     )?;
 
     let rows = stmt.query_map(params![peer], |row| {
-        let direction: String = row.get(0)?;
-        let content: String = row.get(1)?;
-        let timestamp: i64 = row.get(2)?;
-
-        Ok(format!("[{timestamp}] {direction}: {content}"))
+        Ok(StoredMessage {
+            direction: row.get(0)?,
+            content: row.get(1)?,
+            timestamp: row.get(2)?,
+        })
     })?;
 
     let mut messages = Vec::new();
@@ -145,4 +152,16 @@ pub fn get_messages_for_peer(conn: &Connection, peer: &str) -> Result<Vec<String
     }
 
     Ok(messages)
+}
+
+pub fn reset_peer_key(conn: &Connection, peer_name: &str) -> Result<()> {
+    conn.execute(
+        "
+        DELETE FROM peer_keys
+        WHERE peer_name = ?1
+        ",
+        params![peer_name],
+    )?;
+
+    Ok(())
 }

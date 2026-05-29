@@ -19,7 +19,9 @@ pub struct PeerConfig {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            username: "suraj".to_string(),
+            username: std::env::var("USER")
+                .or_else(|_| std::env::var("USERNAME"))
+                .unwrap_or_else(|_| "user".to_string()),
             listen_port: 7799,
             peers: vec![PeerConfig {
                 name: "friend".to_string(),

@@ -253,6 +253,12 @@ cargo run -- --config suraj.toml tui
 cargo run -- --config friend.toml tui
 ```
 
+Get your identity details for sharing with a new peer:
+
+```bash
+cargo run -- identity
+```
+
 Example config:
 
 ```toml
@@ -264,6 +270,50 @@ name = "friend"
 address = "127.0.0.1:7800"
 expected_fingerprint = ""
 ```
+
+## Adding a Friend
+
+Here is the simplest end-to-end setup flow for two people who want to talk over a private network such as Tailscale.
+
+1. Both people initialize CLD on their own machine:
+
+```bash
+cargo run -- init
+```
+
+2. Both people print their local identity details:
+
+```bash
+cargo run -- identity
+```
+
+3. Exchange these details out-of-band:
+
+- Your Tailscale IP and CLD listen port.
+- Your fingerprint from `cld identity`.
+
+4. Add each other as peers using the shared address:
+
+```bash
+cargo run -- add-peer faiz 100.64.0.12:7799
+```
+
+5. Open `config.toml` and set the peer's `expected_fingerprint` if you want explicit first-connection verification instead of relying only on TOFU:
+
+```toml
+[[peers]]
+name = "faiz"
+address = "100.64.0.12:7799"
+expected_fingerprint = "peer-fingerprint-from-cld-identity"
+```
+
+6. Start the TUI on both machines:
+
+```bash
+cargo run -- tui
+```
+
+At that point, each person should see the other in the contacts list and can begin chatting directly over the private network.
 
 
 ## Testing

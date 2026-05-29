@@ -73,7 +73,7 @@ async fn main() -> Result<()> {
 
             let message = args.get(3).map(String::as_str).unwrap_or("hello from CLD");
 
-            net::sender::send(address, &config.username, "manual", message).await?;
+            net::sender::send(address, &config.username, "manual", None, message, 0).await?;
         }
 
         Some("peers") => {
@@ -130,6 +130,18 @@ async fn main() -> Result<()> {
                 println!("Removed peer: {name}");
             }
         }
+
+        Some("reset-peer-key") => {
+            let name = args
+                .get(command_index + 1)
+                .ok_or_else(|| anyhow::anyhow!("Missing peer name"))?;
+
+            let conn = db::connect()?;
+            db::reset_peer_key(&conn, name)?;
+
+            println!("Reset stored key for peer: {name}");
+        }
+
         _ => {
             println!("Usage:");
             println!("  cld init");
@@ -138,6 +150,7 @@ async fn main() -> Result<()> {
             println!("  cld peers");
             println!("  cld add-peer <name> <address>");
             println!("  cld remove-peer <name>");
+            println!("  cld reset-peer-key <name>");
             println!("  cld send <address> <message>");
         }
     }

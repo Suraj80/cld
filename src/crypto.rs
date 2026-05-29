@@ -63,6 +63,12 @@ pub fn load_or_create_identity() -> Result<IdentityKey> {
     let encoded = general_purpose::STANDARD.encode(private.to_bytes());
     fs::write(path, encoded)?;
 
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+    }
+
     Ok(IdentityKey { private, public })
 }
 

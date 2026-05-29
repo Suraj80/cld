@@ -16,7 +16,14 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
-use std::{io, time::Duration};
+use std::{
+    io,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Duration,
+};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -42,21 +49,38 @@ fn load_chat_history(app: &mut AppState) {
         return;
     };
 
-    if let Ok(conn) = crate::db::connect() {
-        if let Ok(history) = crate::db::get_messages_for_peer(&conn, peer) {
-            app.messages = history
-                .into_iter()
-                .map(|content| ChatMessage {
-                    from: "history".to_string(),
-                    content,
-                    timestamp: Utc::now().timestamp(),
-                    direction: MessageDirection::Incoming,
-                    status: None,
-                })
-                .collect();
+    let conn = match crate::db::connect() {
+        Ok(conn) => conn,
+        Err(_) => return,
+    };
 
-            app.current_peer = Some(peer.clone());
-        }
+    if let Ok(history) = crate::db::get_messages_for_peer(&conn, peer) {
+        app.messages = history
+            .into_iter()
+            .map(|message| {
+                let direction = if message.direction == "out" {
+                    MessageDirection::Outgoing
+                } else {
+                    MessageDirection::Incoming
+                };
+
+                let from = if message.direction == "out" {
+                    "you".to_string()
+                } else {
+                    peer.clone()
+                };
+
+                ChatMessage {
+                    from,
+                    content: message.content,
+                    timestamp: message.timestamp,
+                    direction,
+                    status: None,
+                }
+            })
+            .collect();
+
+        app.current_peer = Some(peer.clone());
     }
 }
 
@@ -67,6 +91,7 @@ async fn run_app(
     let username = config.username.clone();
     let listen_port = config.listen_port;
     let (tx, mut rx) = mpsc::unbounded_channel();
+    let sequence_counter = Arc::new(AtomicU64::new(0));
     let listener_username = username.clone();
     let listener_tx = tx.clone();
 
@@ -96,39 +121,35 @@ async fn run_app(
         while let Ok(event) = rx.try_recv() {
             match event {
                 ChatEvent::IncomingMessage { from, content } => {
-                    app.messages.push(ChatMessage {
-                        from,
-                        content,
-                        timestamp: Utc::now().timestamp(),
-                        direction: MessageDirection::Incoming,
-                        status: None,
-                    });
+                    if app.current_peer.as_deref() == Some(from.as_str()) {
+                        app.messages.push(ChatMessage {
+                            from,
+                            content,
+                            timestamp: Utc::now().timestamp(),
+                            direction: MessageDirection::Incoming,
+                            status: None,
+                        });
+                    }
                 }
 
                 ChatEvent::SystemMessage(message) => {
                     if message == "delivered" {
-                        if let Some(last) = app.messages.iter_mut().rev().find(|message| {
-                            matches!(&message.direction, MessageDirection::Outgoing)
-                                && matches!(&message.status, Some(MessageStatus::Sending))
-                        }) {
+                        if let Some(last) = app.messages.last_mut() {
                             last.status = Some(MessageStatus::Delivered);
                         }
                     } else if message.starts_with("send failed:") {
-                        if let Some(last) = app.messages.iter_mut().rev().find(|message| {
-                            matches!(&message.direction, MessageDirection::Outgoing)
-                                && matches!(&message.status, Some(MessageStatus::Sending))
-                        }) {
+                        if let Some(last) = app.messages.last_mut() {
                             last.status = Some(MessageStatus::Failed);
                         }
+                    } else {
+                        app.messages.push(ChatMessage {
+                            from: "system".to_string(),
+                            content: message,
+                            timestamp: Utc::now().timestamp(),
+                            direction: MessageDirection::Incoming,
+                            status: None,
+                        });
                     }
-
-                    app.messages.push(ChatMessage {
-                        from: "system".to_string(),
-                        content: message,
-                        timestamp: Utc::now().timestamp(),
-                        direction: MessageDirection::Incoming,
-                        status: None,
-                    });
                 }
             }
         }
@@ -225,10 +246,10 @@ async fn run_app(
                         if !app.contacts.is_empty() {
                             if app.selected_contact == 0 {
                                 app.selected_contact = app.contacts.len() - 1;
-                                load_chat_history(&mut app);
                             } else {
                                 app.selected_contact -= 1;
                             }
+                            load_chat_history(&mut app);
                         }
                     }
 
@@ -253,6 +274,11 @@ async fn run_app(
                                 .get(app.selected_contact)
                                 .cloned()
                                 .unwrap_or_else(|| "unknown".to_string());
+                            let expected_fingerprint = config
+                                .peers
+                                .get(app.selected_contact)
+                                .and_then(|peer| peer.expected_fingerprint.as_deref())
+                                .map(str::to_owned);
 
                             app.messages.push(ChatMessage {
                                 from: username.clone(),
@@ -265,14 +291,18 @@ async fn run_app(
                             let tx_clone = tx.clone();
                             let username_clone = username.clone();
                             let peer_name_clone = peer_name.clone();
+                            let expected_fingerprint_clone = expected_fingerprint.clone();
                             let text_clone = text.clone();
+                            let seq = sequence_counter.fetch_add(1, Ordering::SeqCst);
 
                             tokio::spawn(async move {
                                 let result = net::sender::send(
                                     &address,
                                     &username_clone,
                                     &peer_name_clone,
+                                    expected_fingerprint_clone.as_deref(),
                                     &text_clone,
+                                    seq,
                                 )
                                 .await;
 

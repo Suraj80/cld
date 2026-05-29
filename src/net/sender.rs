@@ -11,7 +11,14 @@ use chrono::Utc;
 use tokio::net::TcpStream;
 use uuid::Uuid;
 
-pub async fn send(address: &str, username: &str, peer_name: &str, message: &str) -> Result<()> {
+pub async fn send(
+    address: &str,
+    username: &str,
+    peer_name: &str,
+    expected_fingerprint: Option<&str>,
+    message: &str,
+    seq: u64,
+) -> Result<()> {
     if message.len() > 4096 {
         anyhow::bail!("Message too large. Max allowed size is 4096 bytes.");
     }
@@ -44,6 +51,12 @@ pub async fn send(address: &str, username: &str, peer_name: &str, message: &str)
 
     let peer_fingerprint = public_key_fingerprint_base64(&peer_public_key)?;
 
+    if let Some(expected) = expected_fingerprint {
+        if expected != peer_fingerprint {
+            anyhow::bail!("SECURITY WARNING: expected fingerprint mismatch for {peer_name}");
+        }
+    }
+
     let conn = crate::db::connect()?;
 
     let verified =
@@ -65,7 +78,6 @@ pub async fn send(address: &str, username: &str, peer_name: &str, message: &str)
 
     let plaintext = serde_json::to_vec(&plain_message)?;
 
-    let seq = 0u64;
     let nonce = build_nonce(&my_salt, seq);
 
     let ciphertext = encrypt_payload(&session_keys.send_key, &nonce, &plaintext)?;
