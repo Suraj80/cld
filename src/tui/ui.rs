@@ -14,7 +14,7 @@ use ratatui::{
     Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
 };
 use std::{
     io,
@@ -28,6 +28,13 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 pub async fn run_tui(config: config::Config) -> Result<()> {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = crossterm::terminal::disable_raw_mode();
+        let _ = crossterm::execute!(io::stdout(), LeaveAlternateScreen);
+        default_hook(info);
+    }));
+
     enable_raw_mode()?;
 
     let mut stdout = io::stdout();
@@ -249,7 +256,8 @@ async fn run_app(
                 .join("\n");
 
             let messages_widget = Paragraph::new(message_text)
-                .block(Block::default().title("Messages").borders(Borders::ALL));
+                .block(Block::default().title("Messages").borders(Borders::ALL))
+                .wrap(Wrap { trim: false });
 
             let input_widget = Paragraph::new(app.input.as_str())
                 .block(Block::default().title("Input").borders(Borders::ALL));

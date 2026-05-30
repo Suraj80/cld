@@ -61,7 +61,7 @@ pub fn load_or_create_identity() -> Result<IdentityKey> {
     let public = PublicKey::from(&private);
 
     let encoded = general_purpose::STANDARD.encode(private.to_bytes());
-    fs::write(path, encoded)?;
+    fs::write(&path, encoded)?;
 
     #[cfg(unix)]
     {

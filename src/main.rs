@@ -48,6 +48,17 @@ async fn main() -> Result<()> {
             println!();
             println!("Edit config.toml to update your username and peers.");
         }
+        Some("identity") => {
+            let config = load_app_config(config_override.as_ref())?;
+            let identity = crypto::load_or_create_identity()?;
+            let pubkey = identity.public_key_base64();
+            let fingerprint = crypto::public_key_fingerprint_base64(&pubkey)?;
+
+            println!("Username:    {}", config.username);
+            println!("Fingerprint: {}", fingerprint);
+            println!("Public key:  {}", pubkey);
+            println!("Listen port: {}", config.listen_port);
+        }
         Some("tui") => {
             let config = load_app_config(config_override.as_ref())?;
             tui::ui::run_tui(config).await?;
@@ -69,9 +80,15 @@ async fn main() -> Result<()> {
         Some("send") => {
             let config = load_app_config(config_override.as_ref())?;
 
-            let address = args.get(2).map(String::as_str).unwrap_or("127.0.0.1:7799");
+            let address = args
+                .get(command_index + 1)
+                .map(String::as_str)
+                .unwrap_or("127.0.0.1:7799");
 
-            let message = args.get(3).map(String::as_str).unwrap_or("hello from CLD");
+            let message = args
+                .get(command_index + 2)
+                .map(String::as_str)
+                .unwrap_or("hello from CLD");
 
             net::sender::send(address, &config.username, "manual", None, message, 0).await?;
         }
@@ -92,11 +109,11 @@ async fn main() -> Result<()> {
 
         Some("add-peer") => {
             let name = args
-                .get(2)
+                .get(command_index + 1)
                 .ok_or_else(|| anyhow::anyhow!("Missing peer name"))?;
 
             let address = args
-                .get(3)
+                .get(command_index + 2)
                 .ok_or_else(|| anyhow::anyhow!("Missing peer address"))?;
 
             let mut config = load_app_config(config_override.as_ref())?;
@@ -114,7 +131,7 @@ async fn main() -> Result<()> {
 
         Some("remove-peer") => {
             let name = args
-                .get(2)
+                .get(command_index + 1)
                 .ok_or_else(|| anyhow::anyhow!("Missing peer name"))?;
 
             let mut config = load_app_config(config_override.as_ref())?;
@@ -145,6 +162,7 @@ async fn main() -> Result<()> {
         _ => {
             println!("Usage:");
             println!("  cld init");
+            println!("  cld identity");
             println!("  cld tui");
             println!("  cld listen");
             println!("  cld peers");

@@ -29,15 +29,20 @@ impl RateLimiter {
     }
 
     fn refill(&mut self) {
-        let elapsed = self.last_refill.elapsed();
+        let refill_millis = self.refill_interval.as_millis();
+        if refill_millis == 0 {
+            return;
+        }
 
-        let tokens_to_add = elapsed.as_secs() / self.refill_interval.as_secs();
+        let elapsed = self.last_refill.elapsed();
+        let tokens_to_add = elapsed.as_millis() / refill_millis;
 
         if tokens_to_add == 0 {
             return;
         }
 
-        self.tokens = (self.tokens + tokens_to_add as u32).min(self.capacity);
-        self.last_refill = Instant::now();
+        let tokens_to_add = u32::try_from(tokens_to_add).unwrap_or(u32::MAX);
+        self.tokens = self.tokens.saturating_add(tokens_to_add).min(self.capacity);
+        self.last_refill += self.refill_interval * tokens_to_add;
     }
 }

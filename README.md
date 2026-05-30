@@ -171,7 +171,6 @@ Additional project files:
 ```text
 Cargo.toml             Rust package metadata and dependencies
 prd.md                 Product requirements and protocol notes
-suraj.toml             Example local profile configuration
 ```
 
 ## Installation
@@ -210,6 +209,12 @@ Initialize a CLD profile:
 cargo run -- init
 ```
 
+Show your local identity details:
+
+```bash
+cargo run -- identity
+```
+
 Start the terminal UI:
 
 ```bash
@@ -234,6 +239,12 @@ Remove a peer:
 cargo run -- remove-peer friend
 ```
 
+Reset a stored peer key after an expected key rotation or TOFU mismatch:
+
+```bash
+cargo run -- reset-peer-key friend
+```
+
 Send a one-shot message:
 
 ```bash
@@ -243,14 +254,14 @@ cargo run -- send 127.0.0.1:7799 "hello from CLD"
 Run with a specific config profile:
 
 ```bash
-cargo run -- --config suraj.toml tui
+cargo run -- --config alice.toml tui
 ```
 
 Run two local profiles for testing:
 
 ```bash
-cargo run -- --config suraj.toml tui
-cargo run -- --config friend.toml tui
+cargo run -- --config alice.toml tui
+cargo run -- --config bob.toml tui
 ```
 
 Get your identity details for sharing with a new peer:
