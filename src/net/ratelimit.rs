@@ -29,21 +29,25 @@ impl RateLimiter {
     }
 
     fn refill(&mut self) {
-        let interval_ms = self.refill_interval.as_millis();
+        let interval_ns = self.refill_interval.as_nanos();
 
-        if interval_ms == 0 {
+        if interval_ns == 0 {
             return;
         }
 
-        let elapsed_ms = self.last_refill.elapsed().as_millis();
-        let tokens_to_add = elapsed_ms / interval_ms;
+        let elapsed_ns = self.last_refill.elapsed().as_nanos();
+        let tokens_to_add = elapsed_ns / interval_ns;
 
         if tokens_to_add == 0 {
             return;
         }
 
-        self.tokens = (self.tokens + tokens_to_add as u32).min(self.capacity);
-        self.last_refill += Duration::from_millis((tokens_to_add * interval_ms) as u64);
+        let room = (self.capacity - self.tokens) as u128;
+        let add = tokens_to_add.min(room) as u32;
+        self.tokens += add;
+
+        let consumed_ns = tokens_to_add.saturating_mul(interval_ns).min(u64::MAX as u128) as u64;
+        self.last_refill += Duration::from_nanos(consumed_ns);
     }
 }
 
@@ -57,11 +61,11 @@ mod tests {
         limiter.tokens = 0;
 
         let before_refill = Instant::now();
-        limiter.last_refill = before_refill - Duration::from_millis(1900);
+        limiter.last_refill = before_refill - Duration::from_millis(1100);
 
         limiter.refill();
 
         assert_eq!(limiter.tokens, 1);
-        assert!(limiter.last_refill <= before_refill - Duration::from_millis(800));
+        assert!(limiter.last_refill <= before_refill - Duration::from_millis(100));
     }
 }
