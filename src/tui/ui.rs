@@ -143,30 +143,49 @@ async fn run_app(
                     );
                 }
 
-                ChatEvent::SystemMessage(message) => {
-                    if message == "delivered" {
-                        if let Some(last) = app
-                            .visible_messages_mut()
-                            .and_then(|messages| messages.last_mut())
+                ChatEvent::MessageDelivered { peer } => {
+                    if let Some(msgs) = app.messages.get_mut(&peer) {
+                        if let Some(last) = msgs
+                            .iter_mut()
+                            .rev()
+                            .find(|m| matches!(m.status, Some(MessageStatus::Sending)))
                         {
                             last.status = Some(MessageStatus::Delivered);
                         }
-                    } else if message.starts_with("send failed:") {
-                        if let Some(last) = app
-                            .visible_messages_mut()
-                            .and_then(|messages| messages.last_mut())
+                    }
+                }
+
+                ChatEvent::MessageFailed { peer, reason } => {
+                    if let Some(msgs) = app.messages.get_mut(&peer) {
+                        if let Some(last) = msgs
+                            .iter_mut()
+                            .rev()
+                            .find(|m| matches!(m.status, Some(MessageStatus::Sending)))
                         {
                             last.status = Some(MessageStatus::Failed);
                         }
-                    } else {
-                        app.push_message_for_current_peer(ChatMessage {
+                    }
+
+                    app.push_message_for_peer(
+                        peer,
+                        ChatMessage {
                             from: "system".to_string(),
-                            content: message,
+                            content: reason,
                             timestamp: Utc::now().timestamp(),
                             direction: MessageDirection::Incoming,
                             status: None,
-                        });
-                    }
+                        },
+                    );
+                }
+
+                ChatEvent::SystemMessage(message) => {
+                    app.push_message_for_current_peer(ChatMessage {
+                        from: "system".to_string(),
+                        content: message,
+                        timestamp: Utc::now().timestamp(),
+                        direction: MessageDirection::Incoming,
+                        status: None,
+                    });
                 }
             }
         }
@@ -297,13 +316,16 @@ async fn run_app(
                                 .and_then(|peer| peer.expected_fingerprint.as_deref())
                                 .map(str::to_owned);
 
-                            app.push_message_for_current_peer(ChatMessage {
-                                from: username.clone(),
-                                content: text.clone(),
-                                timestamp: Utc::now().timestamp(),
-                                direction: MessageDirection::Outgoing,
-                                status: Some(MessageStatus::Sending),
-                            });
+                            app.push_message_for_peer(
+                                peer_name.clone(),
+                                ChatMessage {
+                                    from: username.clone(),
+                                    content: text.clone(),
+                                    timestamp: Utc::now().timestamp(),
+                                    direction: MessageDirection::Outgoing,
+                                    status: Some(MessageStatus::Sending),
+                                },
+                            );
 
                             let tx_clone = tx.clone();
                             let username_clone = username.clone();
@@ -323,7 +345,7 @@ async fn run_app(
                                 )
                                 .await;
 
-                                let message = match result {
+                                let event = match result {
                                     Ok(_) => {
                                         if let Ok(conn) = crate::db::connect() {
                                             let _ = crate::db::insert_message(
@@ -336,14 +358,17 @@ async fn run_app(
                                             );
                                         }
 
-                                        ChatEvent::SystemMessage("delivered".to_string())
+                                        ChatEvent::MessageDelivered {
+                                            peer: peer_name_clone.clone(),
+                                        }
                                     }
-                                    Err(error) => {
-                                        ChatEvent::SystemMessage(format!("send failed: {error}"))
-                                    }
+                                    Err(e) => ChatEvent::MessageFailed {
+                                        peer: peer_name_clone.clone(),
+                                        reason: e.to_string(),
+                                    },
                                 };
 
-                                let _ = tx_clone.send(message);
+                                let _ = tx_clone.send(event);
                             });
                         }
                     }
