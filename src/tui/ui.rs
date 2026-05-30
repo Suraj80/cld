@@ -55,6 +55,10 @@ fn load_chat_history(app: &mut AppState) {
         return;
     }
 
+    // Set current_peer before DB attempt so visible_messages() stays consistent
+    // even if the DB connection fails.
+    app.current_peer = Some(peer.clone());
+
     let conn = match crate::db::connect() {
         Ok(conn) => conn,
         Err(_) => return,
@@ -82,6 +86,7 @@ fn load_chat_history(app: &mut AppState) {
                     timestamp: message.timestamp,
                     direction,
                     status: None,
+                    seq: None,
                 }
             })
             .collect();
@@ -136,47 +141,20 @@ async fn run_app(
                             timestamp: Utc::now().timestamp(),
                             direction: MessageDirection::Incoming,
                             status: None,
+                            seq: None,
                         },
                     );
                 }
 
-                ChatEvent::MessageDelivered { peer } => {
-                    if let Some(msgs) = app.messages.get_mut(&peer) {
-                        if let Some(last) = msgs
-                            .iter_mut()
-                            .rev()
-                            .find(|m| matches!(m.status, Some(MessageStatus::Sending)))
-                        {
-                            last.status = Some(MessageStatus::Delivered);
-                        }
-                    }
+                ChatEvent::MessageDelivered { peer, seq } => {
+                    app.mark_delivered_by_seq(&peer, seq);
                 }
 
-                ChatEvent::MessageFailed { peer, reason } => {
-                    if let Some(msgs) = app.messages.get_mut(&peer) {
-                        if let Some(last) = msgs
-                            .iter_mut()
-                            .rev()
-                            .find(|m| matches!(m.status, Some(MessageStatus::Sending)))
-                        {
-                            last.status = Some(MessageStatus::Failed);
-                        }
-                    }
-
-                    app.push_message_for_peer(
-                        peer,
-                        ChatMessage {
-                            from: "system".to_string(),
-                            content: reason,
-                            timestamp: Utc::now().timestamp(),
-                            direction: MessageDirection::Incoming,
-                            status: None,
-                        },
-                    );
+                ChatEvent::MessageFailed { peer, seq, reason } => {
+                    app.mark_failed_by_seq(&peer, seq, reason);
                 }
 
                 ChatEvent::SystemMessage(message) => {
-                    // For generic system messages, add to currently visible peer's buffer
                     if let Some(peer) = app.current_peer.clone() {
                         app.push_message_for_peer(
                             peer,
@@ -186,6 +164,7 @@ async fn run_app(
                                 timestamp: Utc::now().timestamp(),
                                 direction: MessageDirection::Incoming,
                                 status: None,
+                                seq: None,
                             },
                         );
                     }
@@ -319,6 +298,8 @@ async fn run_app(
                                 .and_then(|peer| peer.expected_fingerprint.as_deref())
                                 .map(str::to_owned);
 
+                            let seq = sequence_counter.fetch_add(1, Ordering::SeqCst);
+
                             app.push_message_for_peer(
                                 peer_name.clone(),
                                 ChatMessage {
@@ -327,6 +308,7 @@ async fn run_app(
                                     timestamp: Utc::now().timestamp(),
                                     direction: MessageDirection::Outgoing,
                                     status: Some(MessageStatus::Sending),
+                                    seq: Some(seq),
                                 },
                             );
 
@@ -335,7 +317,6 @@ async fn run_app(
                             let peer_name_clone = peer_name.clone();
                             let expected_fingerprint_clone = expected_fingerprint.clone();
                             let text_clone = text.clone();
-                            let seq = sequence_counter.fetch_add(1, Ordering::SeqCst);
 
                             tokio::spawn(async move {
                                 let result = net::sender::send(
@@ -363,10 +344,12 @@ async fn run_app(
 
                                         ChatEvent::MessageDelivered {
                                             peer: peer_name_clone.clone(),
+                                            seq,
                                         }
                                     }
                                     Err(e) => ChatEvent::MessageFailed {
                                         peer: peer_name_clone.clone(),
+                                        seq,
                                         reason: e.to_string(),
                                     },
                                 };

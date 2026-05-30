@@ -46,7 +46,9 @@ impl RateLimiter {
         let add = tokens_to_add.min(room) as u32;
         self.tokens += add;
 
-        let consumed_ns = tokens_to_add.saturating_mul(interval_ns).min(u64::MAX as u128) as u64;
+        let consumed_ns = tokens_to_add
+            .saturating_mul(interval_ns)
+            .min(u64::MAX as u128) as u64;
         self.last_refill += Duration::from_nanos(consumed_ns);
     }
 }

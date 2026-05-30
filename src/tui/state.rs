@@ -1,4 +1,5 @@
-use crate::tui::message::ChatMessage;
+use crate::tui::message::{ChatMessage, MessageDirection, MessageStatus};
+use chrono::Utc;
 use std::collections::HashMap;
 
 #[derive(Default)]
@@ -23,12 +24,38 @@ impl AppState {
             .map(|v| v.as_slice())
             .unwrap_or(&[])
     }
+
+    pub fn mark_delivered_by_seq(&mut self, peer: &str, seq: u64) {
+        if let Some(msgs) = self.messages.get_mut(peer) {
+            if let Some(msg) = msgs.iter_mut().find(|m| m.seq == Some(seq)) {
+                msg.status = Some(MessageStatus::Delivered);
+            }
+        }
+    }
+
+    pub fn mark_failed_by_seq(&mut self, peer: &str, seq: u64, reason: String) {
+        if let Some(msgs) = self.messages.get_mut(peer) {
+            if let Some(msg) = msgs.iter_mut().find(|m| m.seq == Some(seq)) {
+                msg.status = Some(MessageStatus::Failed);
+            }
+        }
+        self.push_message_for_peer(
+            peer.to_string(),
+            ChatMessage {
+                from: "system".to_string(),
+                content: reason,
+                timestamp: Utc::now().timestamp(),
+                direction: MessageDirection::Incoming,
+                status: None,
+                seq: None,
+            },
+        );
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::message::{ChatMessage, MessageDirection, MessageStatus};
 
     #[test]
     fn test_status_update_routes_to_correct_peer() {
@@ -41,7 +68,7 @@ mod tests {
             current_peer: None,
         };
 
-        // Send a message to peer A (Alice)
+        // Send a message to peer A (Alice) with a known seq
         app.push_message_for_peer(
             "Alice".to_string(),
             ChatMessage {
@@ -50,22 +77,15 @@ mod tests {
                 timestamp: 1000,
                 direction: MessageDirection::Outgoing,
                 status: Some(MessageStatus::Sending),
+                seq: Some(42),
             },
         );
 
         // Switch to peer B (Bob)
         app.current_peer = Some("Bob".to_string());
 
-        // Simulate MessageDelivered event for Alice
-        if let Some(msgs) = app.messages.get_mut("Alice") {
-            if let Some(last) = msgs
-                .iter_mut()
-                .rev()
-                .find(|m| matches!(m.status, Some(MessageStatus::Sending)))
-            {
-                last.status = Some(MessageStatus::Delivered);
-            }
-        }
+        // Simulate MessageDelivered event for Alice (matched by seq)
+        app.mark_delivered_by_seq("Alice", 42);
 
         // Assert: Alice's message now has Delivered status
         let alice_msgs = app.messages.get("Alice").unwrap();

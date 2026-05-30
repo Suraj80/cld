@@ -18,4 +18,5 @@ pub struct ChatMessage {
     pub timestamp: i64,
     pub direction: MessageDirection,
     pub status: Option<MessageStatus>,
+    pub seq: Option<u64>,
 }
